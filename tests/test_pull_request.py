@@ -46,7 +46,7 @@ class PullRequestTests(unittest.TestCase):
             def fake_run(cmd, cwd=None):
                 calls.append(cmd)
                 if cmd[:3] == ["gh", "repo", "clone"]:
-                    Path(cmd[3]).mkdir(parents=True)
+                    Path(cmd[4]).mkdir(parents=True)
                 if cmd[:2] == ["git", "rev-parse"]:
                     return "main"
                 if cmd[:2] == ["gh", "pr"]:
@@ -64,6 +64,41 @@ class PullRequestTests(unittest.TestCase):
             self.assertIn("--title=Titulo", calls[-1])
             self.assertEqual(calls[0][:4], ["gh", "repo", "clone", "o/r"])
             self.assertTrue(any(c[:2] == ["git", "push"] for c in calls))
+
+    def test_publish_reuses_existing_branch_and_pr(self):
+        """Una segunda ejecución debe actualizar la misma rama/PR, no crear uno nuevo."""
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp)
+            (out / "specs").mkdir()
+            (out / "specs/a.md").write_text("a")
+
+            calls = []
+            branch = f"crewai/{pr.slugify(FEATURE['title'])}"
+
+            def fake_run(cmd, cwd=None):
+                calls.append(cmd)
+                if cmd[:3] == ["gh", "repo", "clone"]:
+                    Path(cmd[4]).mkdir(parents=True)
+                if cmd[:2] == ["git", "rev-parse"]:
+                    return "main"
+                if cmd[:3] == ["git", "ls-remote", "--heads"]:
+                    return f"abc123\trefs/heads/{branch}"
+                if cmd[:3] == ["gh", "pr", "list"]:
+                    return "https://github.com/o/r/pull/7"
+                if cmd[:3] == ["gh", "pr", "create"]:
+                    return "https://github.com/o/r/pull/999"
+                return ""
+
+            env = {"PR_TARGET_REPO": "o/r", "PR_TARGET_DIR": ""}
+            with patch.dict("os.environ", env), patch.object(pr, "_run", side_effect=fake_run), \
+                    patch.object(pr.subprocess, "run") as diff:
+                diff.return_value.returncode = 1
+                url = pr.publish_pull_request(out, FEATURE["title"], "Titulo", "Cuerpo", draft=True)
+
+            self.assertEqual(url, "https://github.com/o/r/pull/7")
+            self.assertFalse(any(c[:3] == ["gh", "pr", "create"] for c in calls))
+            self.assertIn(["git", "fetch", "origin", branch], calls)
+            self.assertIn(["git", "checkout", "-B", branch, "FETCH_HEAD"], calls)
 
     def test_main_opens_pr_once_after_human_approval(self):
         checkpoint = {"steps": {}}

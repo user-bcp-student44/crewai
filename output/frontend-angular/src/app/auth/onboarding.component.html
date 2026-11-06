@@ -1,0 +1,164 @@
+<!-- onboarding.component.html -->
+<main class="onb" aria-labelledby="onb-title">
+  <h1 id="onb-title" class="onb__title">Activa tu wallet</h1>
+
+  @if (viewState() === 'loading') {
+    <div class="onb__loading" role="status">
+      <span class="spinner" aria-hidden="true"></span>
+      <span>Cargando tu registro…</span>
+    </div>
+  }
+
+  @if (error(); as err) {
+    <section class="onb__error" role="alert" tabindex="-1" data-error-focus>
+      <h2 class="onb__error-title">{{ err.title }}</h2>
+      <p>{{ err.message }}</p>
+      @if (err.correlationId) {
+        <p class="onb__ref">Código de referencia: {{ err.correlationId }}</p>
+      }
+      <div class="onb__actions">
+        @if (err.requiresLogin && canGoToLogin) {
+          <button type="button" class="btn" (click)="goToLogin()">Iniciar sesión</button>
+        } @else if (err.refreshRequired) {
+          <button type="button" class="btn" (click)="load()" [disabled]="loading()">Actualizar</button>
+        } @else if (err.retryable && viewState() === 'error') {
+          <button type="button" class="btn" (click)="load()" [disabled]="loading()">Reintentar</button>
+        }
+      </div>
+    </section>
+  }
+
+  @if (progress(); as p) {
+    @if (viewState() === 'empty') {
+      <section class="onb__empty">
+        <h2 tabindex="-1" data-focus>No hay pasos disponibles por ahora</h2>
+        <p>No pudimos mostrar los pasos de tu registro. Inténtalo de nuevo.</p>
+        <button type="button" class="btn" (click)="load()" [disabled]="loading()">Reintentar</button>
+      </section>
+    } @else {
+      <nav aria-label="Pasos del registro">
+        <p class="onb__position">
+          @if (p.status === 'COMPLETED') {
+            Registro completado
+          } @else if (position() > 0) {
+            Paso {{ position() }} de {{ steps().length }}
+          }
+        </p>
+        <ol class="steps">
+          @for (s of steps(); track s.stepId) {
+            <li
+              class="steps__item"
+              [class.steps__item--done]="s.status === 'COMPLETED'"
+              [class.steps__item--current]="s.status === 'CURRENT'"
+              [attr.aria-current]="s.status === 'CURRENT' ? 'step' : null"
+            >
+              <span class="steps__marker" aria-hidden="true">{{ s.status === 'COMPLETED' ? '✓' : s.order }}</span>
+              <span class="steps__label">{{ s.label }}</span>
+              <span class="sr-only">, {{ statusText(s.status) }}</span>
+              @if (s.required) {
+                <span class="steps__req">Obligatorio</span>
+              }
+            </li>
+          }
+        </ol>
+      </nav>
+
+      @switch (viewState()) {
+        @case ('completed') {
+          <section class="onb__done">
+            <h2 tabindex="-1" data-focus>¡Tu wallet está activa!</h2>
+            <p>Ya puedes empezar a hacer tus pagos de bajo monto.</p>
+            <button type="button" class="btn" (click)="goToPayments()">Ir a pagos de bajo monto</button>
+          </section>
+        }
+        @case ('activating') {
+          <section class="onb__done">
+            <h2 tabindex="-1" data-focus>Estamos activando tu wallet</h2>
+            <p>Completaste tu registro. La activación puede tardar unos minutos. Vuelve a abrir la app más tarde.</p>
+          </section>
+        }
+        @case ('closed') {
+          <section class="onb__done">
+            <h2 tabindex="-1" data-focus>Tu registro se cerró sin completarse</h2>
+            <p>Puedes empezar de nuevo cuando quieras.</p>
+            <button type="button" class="btn" (click)="load()" [disabled]="loading()">Empezar de nuevo</button>
+          </section>
+        }
+        @case ('ready') {
+          @if (currentStep(); as step) {
+            <form [formGroup]="stepForm" (ngSubmit)="onContinue()" novalidate [attr.aria-busy]="submitting()">
+              <h2 class="onb__step-title" tabindex="-1" data-focus>{{ step.label }}</h2>
+
+              @if (summary().length > 0) {
+                <div class="onb__summary" role="alert" tabindex="-1" data-summary-focus>
+                  <p class="onb__summary-title">Revisa estos datos para continuar:</p>
+                  <ul>
+                    @for (item of summary(); track $index) {
+                      <li>
+                        @if (item.name) {
+                          <button type="button" class="link" (click)="focusField(item.name)">{{ item.message }}</button>
+                        } @else {
+                          {{ item.message }}
+                        }
+                      </li>
+                    }
+                  </ul>
+                </div>
+              }
+
+              @if (currentFields().length === 0) {
+                <p class="onb__unavailable">Este paso todavía no está disponible en la aplicación.</p>
+              }
+
+              @for (f of currentFields(); track f.name) {
+                <div class="field">
+                  <label [for]="'f-' + f.name">
+                    {{ f.label }}
+                    @if (f.required) {
+                      <span aria-hidden="true" class="field__star">*</span>
+                      <span class="sr-only">(obligatorio)</span>
+                    }
+                  </label>
+                  @if (f.hint) {
+                    <p class="field__hint" [id]="'h-' + f.name">{{ f.hint }}</p>
+                  }
+                  <input
+                    class="field__input"
+                    [id]="'f-' + f.name"
+                    [type]="f.type ?? 'text'"
+                    [formControlName]="f.name"
+                    [attr.autocomplete]="f.autocomplete ?? null"
+                    [attr.aria-required]="f.required ? 'true' : null"
+                    [attr.aria-invalid]="errorText(f.name) ? 'true' : null"
+                    [attr.aria-describedby]="describedBy(f)"
+                  />
+                  @if (errorText(f.name); as msg) {
+                    <p class="field__error" [id]="'e-' + f.name">{{ msg }}</p>
+                  }
+                </div>
+              }
+
+              <div class="onb__actions">
+                <button
+                  type="submit"
+                  class="btn"
+                  [disabled]="submitting() || loading() || currentFields().length === 0"
+                >
+                  @if (submitting()) {
+                    <span class="spinner spinner--small" aria-hidden="true"></span>
+                    <span>Enviando…</span>
+                  } @else {
+                    <span>Continuar</span>
+                  }
+                </button>
+              </div>
+              @if (submitting()) {
+                <p class="sr-only" role="status">Enviando tus datos…</p>
+              }
+            </form>
+          }
+        }
+      }
+    }
+  }
+</main>

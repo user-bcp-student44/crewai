@@ -1,0 +1,51 @@
+<!-- payment-history.component.html -->
+<section [attr.aria-busy]="loading()">
+  <h2 #historyHeading tabindex="-1">Historial de pagos</h2>
+
+  <p role="status" aria-live="polite">{{ loading() ? 'Cargando historial…' : '' }}</p>
+
+  @if (error(); as err) {
+    <div role="alert">
+      <p>{{ err.message }}</p>
+      <button type="button" (click)="load(page())">Reintentar carga</button>
+    </div>
+  } @else if (!loading()) {
+    @if (items().length === 0) {
+      <p>Aún no tienes pagos en tu historial.</p>
+    } @else {
+      <table>
+        <caption>Pagos realizados, del más reciente al más antiguo</caption>
+        <thead>
+          <tr>
+            <th scope="col">Fecha</th>
+            <th scope="col">Destino</th>
+            <th scope="col">Monto</th>
+            <th scope="col">Resultado</th>
+            <th scope="col">Referencia</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (p of items(); track p.id) {
+            <tr>
+              <td>{{ p.completedAt ?? p.createdAt }}</td>
+              <td>{{ p.destination?.displayName }}</td>
+              <td>{{ amount(p) }}</td>
+              <td>{{ label(p) }}</td>
+              <td>{{ p.transactionReference ?? '—' }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+
+      <nav aria-label="Paginación del historial">
+        <button type="button" (click)="load(page() - 1)" [disabled]="loading() || page() === 0">
+          Anterior
+        </button>
+        <span>Página {{ page() + 1 }}</span>
+        <button type="button" (click)="load(page() + 1)" [disabled]="loading() || !hasNext()">
+          Siguiente
+        </button>
+      </nav>
+    }
+  }
+</section>

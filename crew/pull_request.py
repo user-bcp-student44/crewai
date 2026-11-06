@@ -1,11 +1,11 @@
-"""Publicación determinista del PR: clona el repo del producto, sube una rama y abre el PR con gh."""
+"""Publicación determinista del PR: clona el repo del producto, sube una rama estable por
+feature y actualiza el mismo PR en cada ejecución en lugar de abrir uno nuevo."""
 import os
 import re
 import shutil
 import subprocess
 import tempfile
 import unicodedata
-from datetime import datetime
 from pathlib import Path
 
 SKIP_DIRS = {"node_modules", "target", "dist", ".angular", ".git", "__pycache__"}
@@ -75,12 +75,22 @@ def _run(cmd: list[str], cwd: Path | None = None) -> str:
     return done.stdout.strip()
 
 
+def _remote_branch_exists(repo: str, branch: str, cwd: Path) -> bool:
+    return bool(_run(["git", "ls-remote", "--heads", "origin", branch], cwd))
+
+
+def _existing_pr_url(repo: str, branch: str, cwd: Path) -> str:
+    """Devuelve la URL del PR abierto para `branch`, o '' si no hay ninguno."""
+    return _run(["gh", "pr", "list", "--repo", repo, "--head", branch, "--state", "open",
+                 "--json", "url", "--jq", ".[0].url"], cwd)
+
+
 def publish_pull_request(output_dir: Path, feature_title: str, title: str, body: str, draft: bool) -> str:
-    """Sube output_dir a una rama nueva del repo del producto y retorna la URL del PR."""
+    """Sube output_dir a una rama estable del repo del producto, reutilizando el PR si ya existe."""
     repo = _target_repo()
     slug = slugify(feature_title)
     target = _target_dir(slug)
-    branch = f"crewai/{slug}-{datetime.now():%Y%m%d-%H%M%S}"
+    branch = f"crewai/{slug}"
     files = collect_files(output_dir)
     if not files:
         raise RuntimeError("output/ no tiene archivos para publicar")
@@ -89,7 +99,13 @@ def publish_pull_request(output_dir: Path, feature_title: str, title: str, body:
         work = Path(tmp) / "repo"
         _run(["gh", "repo", "clone", repo, str(work), "--", "--depth", "1"])
         base = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"], work)
-        _run(["git", "checkout", "-b", branch], work)
+
+        branch_exists = _remote_branch_exists(repo, branch, work)
+        if branch_exists:
+            _run(["git", "fetch", "origin", branch], work)
+            _run(["git", "checkout", "-B", branch, "FETCH_HEAD"], work)
+        else:
+            _run(["git", "checkout", "-b", branch], work)
 
         for rel in files:
             dest = work / target / rel
@@ -98,9 +114,14 @@ def publish_pull_request(output_dir: Path, feature_title: str, title: str, body:
 
         _run(["git", "add", "-A", "--", target.as_posix()], work)
         if subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=work).returncode == 0:
+            if branch_exists and (existing := _existing_pr_url(repo, branch, work)):
+                return existing
             raise RuntimeError("La rama no tiene cambios respecto a la base; no se abre el PR")
         _run(["git", "commit", "-m", f"feat: {title}"], work)
         _run(["git", "push", "-u", "origin", branch], work)
+
+        if branch_exists and (existing := _existing_pr_url(repo, branch, work)):
+            return existing
 
         body_file = Path(tmp) / "pr_body.md"
         body_file.write_text(body, encoding="utf-8")

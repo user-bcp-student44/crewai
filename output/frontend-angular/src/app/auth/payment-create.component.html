@@ -1,0 +1,98 @@
+<!-- payment-create.component.html -->
+<main class="page">
+  <h1>Nuevo pago</h1>
+
+  @if (result(); as res) {
+    <section class="panel panel--ok" aria-labelledby="result-title">
+      <h2 id="result-title" #resultTitle tabindex="-1">Resultado del pago</h2>
+      @if (res.replayed) {
+        <p>Este pago ya estaba registrado. Te mostramos el resultado original.</p>
+      }
+      <dl>
+        <dt>Estado</dt>
+        <dd><strong>{{ statusLabel(res.payment.status) }}</strong></dd>
+        <dt>Monto</dt>
+        <dd>{{ money(res.payment.amountCents, res.payment.currency) }}</dd>
+        <dt>Identificador</dt>
+        <dd>{{ res.payment.paymentId }}</dd>
+        @if (res.payment.createdAt) {
+          <dt>Fecha</dt>
+          <dd>{{ res.payment.createdAt | date: 'dd/MM/yyyy HH:mm' }}</dd>
+        }
+      </dl>
+      <p>{{ statusDescription(res.payment.status) }}</p>
+      <div class="actions">
+        <a class="btn" [routerLink]="['/pagos', res.payment.paymentId]">Ver detalle</a>
+        <button type="button" class="btn btn--secondary" (click)="startNewPayment()">Hacer otro pago</button>
+      </div>
+    </section>
+  } @else {
+    <p class="hint">Todavía no has enviado ningún pago en esta sesión.</p>
+
+    <form [formGroup]="form" (ngSubmit)="submit()" novalidate [attr.aria-busy]="loading()">
+      <div class="field">
+        <label for="payeeId">Destinatario</label>
+        <select
+          id="payeeId"
+          #payeeField
+          formControlName="payeeId"
+          required
+          [attr.aria-invalid]="payeeError ? 'true' : null"
+          [attr.aria-describedby]="payeeError ? 'payeeId-error' : null"
+        >
+          <option value="">Selecciona…</option>
+          @for (p of payees; track p.value) {
+            <option [value]="p.value">{{ p.label }}</option>
+          }
+        </select>
+        @if (payeeError) {
+          <p id="payeeId-error" class="error" role="alert">{{ payeeError }}</p>
+        }
+      </div>
+
+      <div class="field">
+        <label for="amount">Monto en soles (S/)</label>
+        <input
+          id="amount"
+          #amountField
+          type="text"
+          inputmode="decimal"
+          autocomplete="off"
+          formControlName="amount"
+          required
+          aria-describedby="amount-help amount-error"
+          [attr.aria-invalid]="amountError ? 'true' : null"
+        />
+        <p id="amount-help" class="help">Hasta 2 decimales. Ejemplo: 12.50. Moneda: Soles (PEN).</p>
+        <div id="amount-error">
+          @if (amountError) {
+            <p class="error" role="alert">{{ amountError }}</p>
+          }
+        </div>
+      </div>
+
+      @if (loading()) {
+        <p class="progress" role="status">Procesando pago…</p>
+      }
+
+      @if (error(); as err) {
+        <div class="panel panel--error" role="alert" #errorBox tabindex="-1">
+          <p>{{ err.message }}</p>
+          @if (err.traceId) {
+            <p class="help">Código de referencia: {{ err.traceId }}</p>
+          }
+          @if (err.action === 'retry') {
+            <button type="button" class="btn btn--secondary" (click)="submit()" [disabled]="loading()">Reintentar</button>
+          }
+          @if (err.action === 'new-attempt') {
+            <button type="button" class="btn btn--secondary" (click)="discardAttempt()">Iniciar un pago nuevo</button>
+          }
+        </div>
+      }
+
+      <button type="submit" class="btn" [disabled]="loading()">
+        {{ loading() ? 'Procesando…' : 'Pagar' }}
+      </button>
+    </form>
+  }
+</main>

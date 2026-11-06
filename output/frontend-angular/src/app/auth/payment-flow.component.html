@@ -1,0 +1,118 @@
+<!-- payment-flow.component.html -->
+<section class="payment-flow" [attr.aria-busy]="busy() || step() === 'processing'">
+  <p class="visually-hidden" role="status" aria-live="polite">{{ liveMessage() }}</p>
+
+  @if (error(); as err) {
+    <div #errorBox class="alert" role="alert" tabindex="-1">
+      <strong>No se pudo completar la operación</strong>
+      <p>{{ err.message }}</p>
+    </div>
+  }
+
+  @switch (step()) {
+    @case ('form') {
+      <h2 #stepHeading tabindex="-1">Transferencia de bajo monto</h2>
+      <form [formGroup]="form" (ngSubmit)="submitForm()" novalidate>
+        <div class="field">
+          <label for="destination-identifier">Destino del pago</label>
+          <input
+            id="destination-identifier"
+            type="text"
+            formControlName="destinationIdentifier"
+            autocomplete="off"
+            [attr.aria-invalid]="destinationError() ? 'true' : null"
+            [attr.aria-describedby]="destinationError() ? 'destination-error' : null"
+          />
+          @if (destinationError(); as msg) {
+            <p id="destination-error" class="field-error">{{ msg }}</p>
+          }
+        </div>
+
+        <div class="field">
+          <label for="amount">Monto ({{ context.currency }})</label>
+          <input
+            id="amount"
+            type="text"
+            inputmode="decimal"
+            formControlName="amount"
+            autocomplete="off"
+            aria-describedby="amount-hint amount-error"
+            [attr.aria-invalid]="amountError() ? 'true' : null"
+          />
+          <p id="amount-hint" class="hint">Usa punto o coma para los decimales. Ejemplo: 12.50</p>
+          <p id="amount-error" class="field-error">{{ amountError() }}</p>
+        </div>
+
+        <button type="submit" [disabled]="busy()">
+          {{ busy() ? 'Verificando…' : 'Continuar' }}
+        </button>
+      </form>
+    }
+
+    @case ('confirm') {
+      @if (preview(); as p) {
+        <h2 #stepHeading tabindex="-1">Confirma tu pago</h2>
+        <dl class="summary">
+          <dt>Destino</dt>
+          <dd>{{ p.destination.displayName }}</dd>
+          <dt>Identificador</dt>
+          <dd>{{ p.destination.identifier }}</dd>
+          <dt>Monto</dt>
+          <dd>{{ formatAmount(p.amountMinor, p.currency) }}</dd>
+        </dl>
+        <div class="actions">
+          <button type="button" (click)="confirm()" [disabled]="busy()">
+            {{ busy() ? 'Enviando pago…' : 'Confirmar pago' }}
+          </button>
+          <button type="button" class="secondary" (click)="editData()" [disabled]="busy()">
+            Editar datos
+          </button>
+        </div>
+      }
+    }
+
+    @case ('processing') {
+      <h2 #stepHeading tabindex="-1">Estamos confirmando tu pago</h2>
+      <div class="spinner" aria-hidden="true"></div>
+      <p>Esto puede tardar unos segundos. No cierres esta pantalla ni repitas el pago.</p>
+    }
+
+    @case ('delayed') {
+      <h2 #stepHeading tabindex="-1">Aún no tenemos el resultado</h2>
+      <p>Tu pago puede seguir en proceso. No lo repitas: consulta de nuevo o revisa tu historial.</p>
+      <div class="actions">
+        <button type="button" (click)="resumePolling()">Consultar de nuevo</button>
+        <button type="button" class="secondary" (click)="viewHistory.emit()">Ver historial</button>
+      </div>
+    }
+
+    @case ('result') {
+      @if (payment(); as pay) {
+        <h2 #stepHeading tabindex="-1">{{ resultLabel() }}</h2>
+        <p>{{ resultMessage() }}</p>
+
+        @if (terminalStatus() === 'SUCCEEDED') {
+          <dl class="summary">
+            <dt>Referencia de transacción</dt>
+            <dd>{{ pay.transactionReference }}</dd>
+            @if (preview(); as p) {
+              <dt>Destino</dt>
+              <dd>{{ p.destination.displayName }}</dd>
+              <dt>Monto</dt>
+              <dd>{{ formatAmount(p.amountMinor, p.currency) }}</dd>
+            }
+          </dl>
+          <div class="actions">
+            <button type="button" (click)="viewHistory.emit()">Ver historial</button>
+            <button type="button" class="secondary" (click)="backToStart()">Hacer otro pago</button>
+          </div>
+        } @else {
+          <div class="actions">
+            <button type="button" (click)="retry()">Reintentar</button>
+            <button type="button" class="secondary" (click)="backToStart()">Volver</button>
+          </div>
+        }
+      }
+    }
+  }
+</section>
